@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>GkEvents — Eventos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0f172a; --panel:#0b1224; --muted:#a3acc2; --text:#e6ecff; --primary:#22c55e; --primary-2:#16a34a; --danger:#ef4444; --danger-2:#dc2626; --line:#1e2a4a; }
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(1000px 600px at 50% -200px,#122042 0,#0f172a 60%);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu;color:var(--text)}
+    .wrap{max-width:1100px;margin:30px auto;padding:0 16px}
+    h1{font-size:18px;margin:0 0 16px}
+    .header{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:10px}
+    .badge{font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:#9fb3ff;background:#0b1330}
+    .btn{border:1px solid var(--line);background:#0b1532;color:var(--text);padding:8px 12px;border-radius:8px;cursor:pointer}
+    .btn:hover{filter:brightness(1.08)}
+    .btn.primary{background:var(--primary);border-color:transparent;color:#062b14}
+    .btn.primary:hover{background:var(--primary-2)}
+    .btn.danger{background:var(--danger);border-color:transparent}
+    .btn.danger:hover{background:var(--danger-2)}
+    .btn.sm{padding:6px 10px;font-size:12px}
+    .pane{background:rgba(11,18,36,.75);border:1px solid var(--line);border-radius:12px;padding:16px}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:14px}
+    .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+    input,select{background:#0a132b;border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:8px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-top:1px solid var(--line);padding:10px 8px}
+    th{font-weight:600;text-align:left;color:#cbd6ff;background:#0c1834}
+    tr:hover td{background:#0c1530}
+    .muted{color:var(--muted)}
+    .side h3{margin:0 0 10px}
+    .field{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+    .hint{font-size:12px;color:var(--muted)}
+    ul.clean{list-style:none;margin:6px 0 0;padding:0;max-height:180px;overflow:auto}
+    .split{display:flex;gap:8px;align-items:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="split">
+        <h1>GkEvents</h1>
+        <span id="who" class="badge">Não logado</span>
+      </div>
+      <div class="split">
+        <a class="btn sm" href="/login.html">Login</a>
+        <button id="btnLogout" class="btn sm danger">Sair</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Lista -->
+      <div class="pane">
+        <div class="toolbar">
+          <input id="q" placeholder="Buscar por nome ou local..." />
+          <select id="pageSize">
+            <option>10</option><option>20</option><option>50</option>
+          </select>
+          <button id="btnReload" class="btn">Recarregar</button>
+          <button id="btnNew" class="btn primary">Novo evento</button>
+          <span class="hint">Dica: admin cria/edita/exclui. Usuário confirma/cancela.</span>
+        </div>
+
+        <table>
+          <thead><tr>
+            <th style="width:70px">ID</th>
+            <th>Nome</th>
+            <th style="width:140px">Data</th>
+            <th style="width:160px">Local</th>
+            <th style="width:220px">Ações</th>
+          </tr></thead>
+          <tbody id="rows">
+            <tr><td colspan="5" class="muted">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Lateral -->
+      <div class="pane side">
+        <h3>Detalhes</h3>
+        <div id="detailsEmpty" class="muted">Selecione um evento…</div>
+        <div id="details" style="display:none">
+          <div class="field"><label>ID</label><input id="evtId" disabled value="(auto)"></div>
+          <div class="field"><label>Nome</label><input id="evtName" placeholder="ex: Hackathon"></div>
+          <div class="field"><label>Data</label><input id="evtDate" placeholder="dd/mm/aaaa"></div>
+          <div class="field"><label>Local</label><input id="evtLoc" placeholder="ex: Auditório"></div>
+
+          <div class="split" style="margin:8px 0 12px">
+            <button id="btnSave" class="btn primary">Salvar</button>
+            <button id="btnCancelEdit" class="btn">Cancelar</button>
+            <button id="btnDelete" class="btn danger">Excluir</button>
+          </div>
+
+          <div class="field">
+            <label>Inscritos</label>
+            <ul id="attList" class="clean"></ul>
+          </div>
+
+          <div id="rsvpRow" class="split">
+            <button id="btnConfirm" class="btn primary">Confirmar presença</button>
+            <button id="btnUnconfirm" class="btn">Cancelar presença</button>
+          </div>
+
+          <div class="hint" style="margin-top:10px">Dica: admin pode criar/editar/excluir. Usuário confirma/cancela.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Helpers de data
+    const fmtBR = (iso) => {
+      if (!iso) return '';
+      // aceita "2025-09-10" ou "2025-09-10T00:00:00.000Z"
+      const s = iso.slice(0, 10);
+      const [y,m,d] = s.split('-');
+      return `${d}/${m}/${y}`;
+    };
+    const brToISO = (br) => {
+      if (!br) return '';
+      const [d,m,y] = br.split('/');
+      return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    };
+
+    // ===== Estado
+    let me = null;         // {id,name,role} | null
+    let all = [];          // lista de eventos
+    let selected = null;   // evento atual (objeto completo)
+
+    // ===== UI refs
+    const who = document.querySelector('#who');
+    const rows = document.querySelector('#rows');
+    const q = document.querySelector('#q');
+    const pageSize = document.querySelector('#pageSize');
+    const btnReload = document.querySelector('#btnReload');
+    const btnNew = document.querySelector('#btnNew');
+    const btnLogout = document.querySelector('#btnLogout');
+
+    // Detalhes
+    const detailsWrap = document.querySelector('#details');
+    const detailsEmpty = document.querySelector('#detailsEmpty');
+    const evtId = document.querySelector('#evtId');
+    const evtName = document.querySelector('#evtName');
+    const evtDate = document.querySelector('#evtDate');
+    const evtLoc = document.querySelector('#evtLoc');
+    const attList = document.querySelector('#attList');
+    const btnSave = document.querySelector('#btnSave');
+    const btnDelete = document.querySelector('#btnDelete');
+    const btnCancelEdit = document.querySelector('#btnCancelEdit');
+    const btnConfirm = document.querySelector('#btnConfirm');
+    const btnUnconfirm = document.querySelector('#btnUnconfirm');
+    const rsvpRow = document.querySelector('#rsvpRow');
+
+    // ===== Fetch util
+    async function api(path, opts={}) {
+      const r = await fetch(path, { credentials:'include', headers:{'Content-Type':'application/json'}, ...opts });
+      const ct = r.headers.get('content-type')||'';
+      let body = null;
+      if (ct.includes('application/json')) {
+        body = await r.json();
+      } else {
+        // fallback
+        body = { ok: r.ok };
+      }
+      if (!r.ok || body.ok === false) {
+        const msg = (body && (body.error||body.message)) || `http_${r.status}`;
+        throw new Error(msg);
+      }
+      return body;
+    }
+
+    // ===== Sessão
+    async function loadMe() {
+      try {
+        const j = await api('/api/me');
+        me = j.user || null;
+      } catch {
+        me = null;
+      }
+      who.textContent = me ? `${me.name || 'Usuário'} (${me.role})` : 'Não logado';
+      // mostra/oculta capacidades de admin
+      const isAdmin = !!me && me.role === 'admin';
+      btnNew.style.display = isAdmin ? '' : 'none';
+      btnSave.style.display = isAdmin ? '' : 'none';
+      btnDelete.style.display = isAdmin ? '' : 'none';
+      // RSVP só faz sentido para usuário logado:
+      rsvpRow.style.display = me ? '' : 'none';
+    }
+
+    // ===== Lista
+    function renderRow(ev) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${ev.id}</td>
+        <td>${ev.name}</td>
+        <td>${fmtBR(ev.date)}</td>
+        <td>${ev.location}</td>
+        <td>
+          <div class="split">
+            <button class="btn sm" data-act="det" data-id="${ev.id}">Detalhes</button>
+            ${me && me.role === 'admin' ? `<button class="btn sm danger" data-act="del" data-id="${ev.id}">Excluir</button>` : ''}
+          </div>
+        </td>
+      `;
+      tr.querySelector('[data-act="det"]').addEventListener('click', () => loadDetails(ev.id));
+      if (me && me.role === 'admin') {
+        tr.querySelector('[data-act="del"]').addEventListener('click', () => deleteEvent(ev.id));
+      }
+      return tr;
+    }
+
+    function applyFilter(data) {
+      const term = (q.value||'').trim().toLowerCase();
+      let list = data;
+      if (term) {
+        list = data.filter(e =>
+          (e.name||'').toLowerCase().includes(term) ||
+          (e.location||'').toLowerCase().includes(term)
+        );
+      }
+      const limit = parseInt(pageSize.value,10)||10;
+      return list.slice(0, limit);
+    }
+
+    async function loadList() {
+      rows.innerHTML = `<tr><td colspan="5" class="muted">Carregando…</td></tr>`;
+      try {
+        const j = await api('/api/events');
+        all = Array.isArray(j) ? j : (j.events || []);
+        const subset = applyFilter(all);
+        if (subset.length === 0) {
+          rows.innerHTML = `<tr><td colspan="5" class="muted">Nenhum evento encontrado</td></tr>`;
+          return;
+        }
+        rows.innerHTML = '';
+        subset.forEach(ev => rows.appendChild(renderRow(ev)));
+      } catch (e) {
+        rows.innerHTML = `<tr><td colspan="5" class="muted">Falha ao carregar</td></tr>`;
+      }
+    }
+
+    // ===== Detalhes
+    function showDetailsUI(show) {
+      detailsWrap.style.display = show ? '' : 'none';
+      detailsEmpty.style.display = show ? 'none' : '';
+    }
+
+    function fillDetails(eventObj, attendees) {
+      selected = eventObj;
+      evtId.value = eventObj.id ?? '(auto)';
+      evtName.value = eventObj.name || '';
+      evtDate.value = fmtBR(eventObj.date);
+      evtLoc.value = eventObj.location || '';
+      // lista inscritos
+      attList.innerHTML = '';
+      if (Array.isArray(attendees) && attendees.length) {
+        attendees.forEach(a => {
+          const li = document.createElement('li');
+          li.textContent = `${a.name || '(sem nome)'} — ${a.email}`;
+          attList.appendChild(li);
+        });
+      } else {
+        attList.innerHTML = '<li class="muted">Ninguém inscrito ainda.</li>';
+      }
+      // Botões de rsvp
+      if (!me) {
+        rsvpRow.style.display = 'none';
+      } else {
+        rsvpRow.style.display = '';
+      }
+    }
+
+    async function loadDetails(id) {
+      try {
+        const j = await api(`/api/events/${id}`);
+        // o backend retorna { ok, event, attendees }
+        const { event, attendees } = j;
+        // se o backend não incluir "id" dentro de event, garanta-o
+        if (event && event.id == null) event.id = id;
+        fillDetails(event, attendees || []);
+        showDetailsUI(true);
+      } catch (e) {
+        alert('Erro ao carregar detalhes');
+      }
+    }
+
+    // ===== CRUD (admin)
+    function resetFormForNew() {
+      selected = null;
+      evtId.value = '(auto)';
+      evtName.value = '';
+      evtDate.value = '';
+      evtLoc.value = '';
+      attList.innerHTML = '<li class="muted">—</li>';
+      showDetailsUI(true);
+    }
+
+    async function saveEvent() {
+      if (!me || me.role !== 'admin') return alert('Somente admin pode salvar');
+      const payload = {
+        name: (evtName.value||'').trim(),
+        date: brToISO((evtDate.value||'').trim()),
+        location: (evtLoc.value||'').trim()
+      };
+      if (!payload.name || !payload.date || !payload.location) {
+        return alert('Preencha nome, data e local');
+      }
+      try {
+        if (selected && selected.id) {
+          await api(`/api/events/${selected.id}`, { method:'PUT', body: JSON.stringify(payload) });
+        } else {
+          await api('/api/events', { method:'POST', body: JSON.stringify(payload) });
+        }
+        await loadList();
+        showDetailsUI(false);
+      } catch (e) {
+        alert('Falha ao salvar');
+      }
+    }
+
+    async function deleteEvent(id) {
+      if (!me || me.role !== 'admin') return alert('Somente admin pode excluir');
+      if (!confirm('Tem certeza que deseja excluir este evento?')) return;
+      try {
+        await api(`/api/events/${id}`, { method:'DELETE' });
+        if (selected && selected.id === id) showDetailsUI(false);
+        await loadList();
+      } catch (e) {
+        alert('Falha ao excluir');
+      }
+    }
+
+    // ===== Presença
+    async function confirmPresence() {
+      if (!me) return alert('Faça login para confirmar');
+      if (!selected || !selected.id) return;
+      try {
+        await api(`/api/events/${selected.id}/confirm`, { method:'POST' });
+        await loadDetails(selected.id); // atualiza lista de inscritos
+      } catch (e) {
+        alert('Falha ao confirmar');
+      }
+    }
+
+    async function cancelPresence() {
+      if (!me) return alert('Faça login para cancelar');
+      if (!selected || !selected.id) return;
+      try {
+        await api(`/api/events/${selected.id}/confirm`, { method:'DELETE' });
+        await loadDetails(selected.id);
+      } catch (e) {
+        alert('Falha ao cancelar');
+      }
+    }
+
+    // ===== Logout
+    async function doLogout() {
+      try { await api('/api/logout', { method:'POST' }); } catch {}
+      me = null;
+      who.textContent = 'Não logado';
+      btnNew.style.display = 'none';
+      showDetailsUI(false);
+      await loadList();
+      location.href = '/login.html';
+    }
+
+    // ===== Eventos de UI
+    q.addEventListener('input', () => {
+      const subset = applyFilter(all);
+      rows.innerHTML = '';
+      if (subset.length === 0) {
+        rows.innerHTML = `<tr><td colspan="5" class="muted">Nenhum evento encontrado</td></tr>`;
+        return;
+      }
+      subset.forEach(ev => rows.appendChild(renderRow(ev)));
+    });
+    pageSize.addEventListener('change', () => {
+      const subset = applyFilter(all);
+      rows.innerHTML = '';
+      if (subset.length === 0) {
+        rows.innerHTML = `<tr><td colspan="5" class="muted">Nenhum evento encontrado</td></tr>`;
+        return;
+      }
+      subset.forEach(ev => rows.appendChild(renderRow(ev)));
+    });
+    btnReload.addEventListener('click', loadList);
+    btnNew.addEventListener('click', resetFormForNew);
+    btnSave.addEventListener('click', saveEvent);
+    btnDelete.addEventListener('click', () => selected && deleteEvent(selected.id));
+    btnCancelEdit.addEventListener('click', () => showDetailsUI(false));
+    btnConfirm.addEventListener('click', confirmPresence);
+    btnUnconfirm.addEventListener('click', cancelPresence);
+    btnLogout.addEventListener('click', doLogout);
+
+    // ===== Boot
+    (async function boot(){
+      showDetailsUI(false);
+      await loadMe();
+      await loadList();
+    })();
+  </script>
+</body>
+</html>

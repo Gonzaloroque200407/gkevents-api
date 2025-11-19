@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>GkEvents — Login</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,Segoe UI,Roboto,Arial}
+    .wrap{max-width:420px;margin:8vh auto;padding:24px;border:1px solid #1f2937;border-radius:12px;background:#111827}
+    h1{margin:0 0 16px 0;font-size:24px}
+    label{display:block;margin:14px 0 6px}
+    input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #374151;background:#0b1220;color:#e5e7eb}
+    button{margin-top:16px;width:100%;padding:12px;border:0;border-radius:8px;background:#22c55e;color:#0b1220;font-weight:700;cursor:pointer}
+    .muted{color:#9ca3af;font-size:13px;margin-top:12px}
+    .link{color:#93c5fd;cursor:pointer}
+    .error{color:#fca5a5;margin-top:10px;min-height:18px}
+    .row{display:flex;gap:10px;margin-top:10px}
+    .row>button{flex:1}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GkEvents</h1>
+
+  <!-- Login -->
+  <div id="loginBox">
+    <label for="loginEmail">E-mail</label>
+    <input id="loginEmail" type="email" autocomplete="username" placeholder="admin@gkevents.com">
+    <label for="loginPassword">Senha</label>
+    <input id="loginPassword" type="password" autocomplete="current-password" placeholder="admin123">
+    <div class="row">
+      <button id="btnLogin">Entrar</button>
+      <button id="btnGoRegister" type="button">Criar conta</button>
+    </div>
+    <div id="loginError" class="error"></div>
+    <div class="muted">Dica: admin@gkevents.com / admin123 • alice@gkevents.com / alice123</div>
+  </div>
+
+  <!-- Registro -->
+  <div id="registerBox" style="display:none">
+    <label for="regName">Nome (opcional)</label>
+    <input id="regName" name="name" type="text" placeholder="Seu nome">
+    <label for="regEmail">E-mail</label>
+    <input id="regEmail" name="email" type="email" required placeholder="voce@exemplo.com">
+    <label for="regPass">Senha</label>
+    <input id="regPass" name="password" type="password" required>
+    <label for="regPass2">Confirmar senha</label>
+    <input id="regPass2" name="confirmPassword" type="password" required>
+    <div class="row">
+      <button id="btnRegister">Criar conta</button>
+      <button id="btnGoLogin" type="button">Já tenho conta</button>
+    </div>
+    <div id="registerError" class="error"></div>
+  </div>
+</div>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+$('#btnGoRegister').onclick = () => { $('#loginBox').style.display='none'; $('#registerBox').style.display='block'; };
+$('#btnGoLogin').onclick    = () => { $('#registerBox').style.display='none'; $('#loginBox').style.display='block';   };
+
+$('#btnLogin').onclick = async () => {
+  $('#loginError').textContent = '';
+  const email = $('#loginEmail').value.trim();
+  const password = $('#loginPassword').value;
+  try {
+    const res = await fetch('/api/login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      location.href = '/app.html';
+    } else {
+      $('#loginError').textContent = data.error || 'erro';
+    }
+  } catch (e) {
+    $('#loginError').textContent = 'erro';
+  }
+};
+
+$('#btnRegister').onclick = async () => {
+  $('#registerError').textContent = '';
+  const payload = {
+    name: $('#regName').value.trim(),
+    email: $('#regEmail').value.trim(),
+    password: $('#regPass').value,
+    confirmPassword: $('#regPass2').value
+  };
+  try {
+    const res = await fetch('/api/register', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Conta criada! Faça login.');
+      location.href = '/login.html';
+    } else {
+      $('#registerError').textContent = data.error || 'erro';
+    }
+  } catch (e) {
+    $('#registerError').textContent = 'erro';
+  }
+};
+</script>
+</body>
+</html>
+
