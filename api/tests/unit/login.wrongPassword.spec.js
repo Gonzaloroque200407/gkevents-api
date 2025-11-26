@@ -1,3 +1,5 @@
+jest.mock("mysql2/promise");
+
 const request = require("supertest");
 const app = require("../../index");
 
