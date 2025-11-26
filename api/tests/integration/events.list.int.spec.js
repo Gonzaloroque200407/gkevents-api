@@ -2,8 +2,6 @@ require("dotenv").config();
 const mysql = require("mysql2/promise");
 const supertest = require("supertest");
 const http = require("http");
-
-// Caminho CORRETO, igual ao events.confirm.int.spec.js
 const app = require("../../index");
 
 describe("Events Integration Test - List Events", () => {
@@ -23,20 +21,21 @@ describe("Events Integration Test - List Events", () => {
     await pool.query("DELETE FROM event_attendees");
     await pool.query("DELETE FROM events");
 
-    server = http.createServer(app).listen(3004, "0.0.0.0", () =>
+    server = http.createServer(app).listen(3004, () =>
       console.log("Test server (events.list) on 3004")
     );
-    request = supertest("http://localhost:3004");
+
+    // 👇 AQUI É O SEGREDO: IPv4 explícito
+    request = supertest("http://127.0.0.1:3004");
   });
 
   afterAll(async () => {
     await pool.end();
-    server.close();
+    if (server) server.close();
   });
 
   test("should return empty list when no events exist", async () => {
     const res = await request.get("/api/events");
-
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBe(0);
@@ -46,7 +45,6 @@ describe("Events Integration Test - List Events", () => {
     await pool.query(
       "INSERT INTO events (name,date,location) VALUES ('A','2025-01-01','Campus')"
     );
-
     await pool.query(
       "INSERT INTO events (name,date,location) VALUES ('B','2025-01-02','PUC')"
     );
