@@ -28,39 +28,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
 
-      - name: Install dependencies
-        working-directory: api
-        run: npm install
+      - name: Install API dependencies
+        run: |
+          cd api
+          npm install
 
       - name: Wait for MySQL
         run: |
-          for i in {1..25}; do
-            nc -z 127.0.0.1 3306 && echo "MySQL OK" && exit 0
-            echo "Aguardando MySQL subir..."
-            sleep 4
+          for i in {1..20}; do
+            nc -z localhost 3306 && echo "MySQL OK" && exit 0
+            echo "Aguardando MySQL..."
+            sleep 3
           done
-          echo "MySQL não respondeu a tempo."
           exit 1
+
+      - name: Create Database Schema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+          mysql -h 127.0.0.1 -uroot -proot gkevents < api/schema.sql
 
       - name: Run Integration Tests
         env:
-          NODE_ENV: test_integration
-          DB_HOST: 127.0.0.1
+          DB_HOST: localhost
           DB_USER: root
           DB_PASS: root
           DB_NAME: gkevents
           DB_PORT: 3306
           SESSION_SECRET: test
-        working-directory: api
-        run: npm run test:integration
+          NODE_ENV: integration
+        run: |
+          cd api
+          npm run test:integration
 
       - name: Run Unit Tests
         env:
           NODE_ENV: test
-        working-directory: api
-        run: npm run test:unit
+        run: |
+          cd api
+          npm run test:unit
