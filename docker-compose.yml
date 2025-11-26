@@ -1,0 +1,59 @@
+services:
+
+  db:
+    image: mysql:8.0
+    container_name: gkevents-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gkevents
+      MYSQL_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+
+  api:
+    build: ./api
+    container_name: gkevents-api
+    restart: always
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: gkevents
+      SESSION_SECRET: gkevents-session-secret-123
+    ports:
+      - "3000:3000"
+
+  tests:
+    build: ./api
+    container_name: gkevents-tests
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: test_integration
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: gkevents_test
+      SESSION_SECRET: test-secret
+    command: ["npm", "run", "test:integration"]
+    volumes:
+      - ./api:/app
+
+  nginx:
+    image: nginx:latest
+    container_name: gkevents-nginx
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro

@@ -1,0 +1,7 @@
+module.exports = {
+  testEnvironment: "node",
+  testMatch: ["**/tests/**/*.spec.js"],
+  moduleNameMapper: {
+    "mysql2/promise": "<rootDir>/__mocks__/mysql2-promise.js"
+  }
+};

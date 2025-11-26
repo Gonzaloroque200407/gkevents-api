@@ -1,0 +1,66 @@
+name: Node API CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: gkevents
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: api
+        run: npm install
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..25}; do
+            nc -z 127.0.0.1 3306 && echo "MySQL OK" && exit 0
+            echo "Aguardando MySQL subir..."
+            sleep 4
+          done
+          echo "MySQL não respondeu a tempo."
+          exit 1
+
+      - name: Run Integration Tests
+        env:
+          NODE_ENV: test_integration
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: root
+          DB_NAME: gkevents
+          DB_PORT: 3306
+          SESSION_SECRET: test
+        working-directory: api
+        run: npm run test:integration
+
+      - name: Run Unit Tests
+        env:
+          NODE_ENV: test
+        working-directory: api
+        run: npm run test:unit
