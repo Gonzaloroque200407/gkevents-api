@@ -25,37 +25,55 @@ jobs:
           --health-retries=5
 
     steps:
+      # --------------------------------------------------------------
+      # CHECKOUT
+      # --------------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # --------------------------------------------------------------
+      # NODE SETUP
+      # --------------------------------------------------------------
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
           node-version: "18"
 
+      # --------------------------------------------------------------
+      # INSTALL DEPENDENCIES
+      # --------------------------------------------------------------
       - name: Install API dependencies
         run: |
           cd api
           npm install
 
+      # --------------------------------------------------------------
+      # WAIT FOR MYSQL
+      # --------------------------------------------------------------
       - name: Wait for MySQL
         run: |
           for i in {1..20}; do
-            nc -z 127.0.0.1 3306 && echo "MySQL OK" && exit 0
+            nc -z mysql 3306 && echo "MySQL OK" && exit 0
             echo "Aguardando MySQL..."
             sleep 3
           done
           exit 1
 
+      # --------------------------------------------------------------
+      # CREATE SCHEMA
+      # --------------------------------------------------------------
       - name: Create Database Schema
         run: |
           sudo apt-get update
           sudo apt-get install -y mysql-client
-          mysql -h 127.0.0.1 -uroot -proot gkevents < api/schema.sql
+          mysql -h mysql -uroot -proot gkevents < api/schema.sql
 
+      # --------------------------------------------------------------
+      # RUN INTEGRATION TESTS
+      # --------------------------------------------------------------
       - name: Run Integration Tests
         env:
-          DB_HOST: 127.0.0.1
+          DB_HOST: mysql
           DB_USER: root
           DB_PASS: root
           DB_NAME: gkevents
@@ -66,6 +84,9 @@ jobs:
           cd api
           npm run test:integration -- --forceExit
 
+      # --------------------------------------------------------------
+      # RUN UNIT TESTS
+      # --------------------------------------------------------------
       - name: Run Unit Tests
         env:
           NODE_ENV: test
