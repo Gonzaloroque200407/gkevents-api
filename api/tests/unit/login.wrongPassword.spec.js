@@ -1,4 +1,4 @@
-jest.mock("mysql2/promise");
+jest.mock("mysql2/promise"); // CORRETO — usa nosso mock em __mocks__
 
 const request = require("supertest");
 const app = require("../../index");
