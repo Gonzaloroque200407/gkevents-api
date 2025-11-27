@@ -41,7 +41,7 @@ jobs:
       - name: Wait for MySQL
         run: |
           for i in {1..20}; do
-            nc -z localhost 3306 && echo "MySQL OK" && exit 0
+            nc -z 127.0.0.1 3306 && echo "MySQL OK" && exit 0
             echo "Aguardando MySQL..."
             sleep 3
           done
@@ -55,7 +55,7 @@ jobs:
 
       - name: Run Integration Tests
         env:
-          DB_HOST: localhost
+          DB_HOST: 127.0.0.1
           DB_USER: root
           DB_PASS: root
           DB_NAME: gkevents
