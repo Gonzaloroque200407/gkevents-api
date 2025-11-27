@@ -1,22 +1,14 @@
 {
   "name": "gkevents-api",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
-  "author": "",
-  "license": "ISC",
-
   "scripts": {
     "start": "node index.js",
-
     "test": "jest --runInBand --detectOpenHandles",
-
     "test:unit": "jest tests/unit --runInBand",
     "test:integration": "jest tests/integration --runInBand",
-
     "test:all": "npm run test:unit && npm run test:integration"
   },
-
   "dependencies": {
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
@@ -29,7 +21,6 @@
     "morgan": "^1.10.1",
     "mysql2": "^3.14.3"
   },
-
   "devDependencies": {
     "jest": "^29.7.0",
     "supertest": "^6.3.3"

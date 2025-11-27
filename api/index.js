@@ -9,26 +9,26 @@ const EventEmitter = require("events");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// =====================================================================
-//  DB POOL (CORRIGIDO PARA UNIT TEST + INTEGRATION + PRODUÇÃO)
-// =====================================================================
+// =========================================================
+//  DB POOL (PRODUÇÃO / TEST / INTEGRATION)
+// =========================================================
 let pool;
 
-// Jest define automaticamente process.env.JEST_WORKER_ID
-const isUnitTest = !!process.env.JEST_WORKER_ID;
-
-// Integração usa NODE_ENV=test_integration
-const isIntegrationTest =
+if (
+  process.env.NODE_ENV === "test" ||
   process.env.NODE_ENV === "test_integration" ||
-  process.env.NODE_ENV === "integration";
-
-// Se for TESTE UNITÁRIO → mock interno
-if (isUnitTest) {
-  pool = {
-    query: async () => [[]], // devolve array vazio sem quebrar
-  };
+  process.env.NODE_ENV === "integration"
+) {
+  // Pool real para testes (usa DB real)
+  pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+  });
 } else {
-  // Testes de integração ou produção usam pool real
+  // Pool produção
   pool = mysql.createPool({
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 3306,
@@ -36,19 +36,22 @@ if (isUnitTest) {
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
     waitForConnections: true,
-    connectionLimit: 10
+    connectionLimit: 10,
+    queueLimit: 0,
   });
 }
 
-module.exports.pool = pool;
-
-// =====================================================================
-//  SESSION STORE (corrigido para unit tests)
-// =====================================================================
+// =========================================================
+//  SESSION STORE (FAKE EM TEST / INTEGRATION)
+// =========================================================
 let sessionStore;
 
-if (isUnitTest || isIntegrationTest) {
-  // Fake session store
+if (
+  process.env.NODE_ENV === "test" ||
+  process.env.NODE_ENV === "integration" ||
+  process.env.NODE_ENV === "test_integration"
+) {
+  // Fake session store para testes
   sessionStore = new EventEmitter();
   sessionStore.get = (_, cb) => cb(null, null);
   sessionStore.set = (_, __, cb) => cb(null);
@@ -78,9 +81,9 @@ if (isUnitTest || isIntegrationTest) {
   );
 }
 
-// =====================================================================
+// =========================================================
 //  SESSIONS
-// =====================================================================
+// =========================================================
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "gkevents-session-secret-123",
@@ -97,16 +100,22 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// =====================================================================
-//  MOCK DE SESSÃO EM TESTES
-// =====================================================================
-if (isUnitTest || isIntegrationTest) {
+// =========================================================
+//  MOCK DE SESSÃO (TEST + INTEGRATION)
+// =========================================================
+if (
+  process.env.NODE_ENV === "test" ||
+  process.env.NODE_ENV === "integration" ||
+  process.env.NODE_ENV === "test_integration"
+) {
   app.use((req, res, next) => {
+    // Forçar usuário não logado
     if (req.headers["x-test-nosession"] === "1") {
       req.session.user = null;
       return next();
     }
 
+    // Forçar usuário customizado
     const mocked = req.headers["x-mock-user"];
     if (mocked) {
       try {
@@ -117,26 +126,32 @@ if (isUnitTest || isIntegrationTest) {
       return next();
     }
 
+    // Por padrão, não logado
     if (!req.session.user) req.session.user = null;
+
     next();
   });
 }
 
-// =====================================================================
-//  STATIC FILES (não carrega em testes)
-// =====================================================================
-if (!isUnitTest && !isIntegrationTest) {
+// =========================================================
+//  STATIC FILES
+// =========================================================
+if (
+  process.env.NODE_ENV !== "test" &&
+  process.env.NODE_ENV !== "integration" &&
+  process.env.NODE_ENV !== "test_integration"
+) {
   app.use(express.static(path.join(__dirname, "public")));
 }
 
-// =====================================================================
-//  ROOT
-// =====================================================================
+// =========================================================
+//  ROOT ROUTE
+// =========================================================
 app.get("/", (_, res) => res.redirect("/login.html"));
 
-// =====================================================================
+// =========================================================
 //  HELPERS
-// =====================================================================
+// =========================================================
 function authUser(req, res) {
   if (!req.session || !req.session.user) {
     res.status(401).json({ ok: false, error: "not_authenticated" });
@@ -157,9 +172,9 @@ function authAdmin(req, res) {
   return u;
 }
 
-// =====================================================================
+// =========================================================
 //  HEALTHCHECK
-// =====================================================================
+// =========================================================
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -169,9 +184,9 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  SESSION ROUTES
-// =====================================================================
+// =========================================================
 app.get("/api/me", (req, res) => {
   res.json({ ok: true, user: req.session.user || null });
 });
@@ -180,9 +195,9 @@ app.post("/api/logout", (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-// =====================================================================
+// =========================================================
 //  LOGIN
-// =====================================================================
+// =========================================================
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -207,9 +222,9 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  REGISTER
-// =====================================================================
+// =========================================================
 app.post("/api/register", async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
@@ -235,9 +250,9 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  LIST EVENTS
-// =====================================================================
+// =========================================================
 app.get("/api/events", async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
@@ -263,9 +278,9 @@ app.get("/api/events", async (req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  EVENT DETAILS
-// =====================================================================
+// =========================================================
 app.get("/api/events/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -280,10 +295,10 @@ app.get("/api/events/:id", async (req, res) => {
 
     const [attendees] = await pool.query(
       `SELECT ea.user_id, u.name, u.email
-         FROM event_attendees ea
-         JOIN users u ON u.id = ea.user_id
-         WHERE ea.event_id=?
-         ORDER BY u.name`,
+       FROM event_attendees ea
+       JOIN users u ON u.id = ea.user_id
+       WHERE ea.event_id=?
+       ORDER BY u.name`,
       [id]
     );
 
@@ -294,9 +309,9 @@ app.get("/api/events/:id", async (req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  CRUD EVENTS (ADMIN ONLY)
-// =====================================================================
+// =========================================================
 app.post("/api/events", async (req, res) => {
   if (!authAdmin(req, res)) return;
 
@@ -356,9 +371,9 @@ app.delete("/api/events/:id", async (req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  CONFIRM & UNCONFIRM
-// =====================================================================
+// =========================================================
 app.post("/api/events/:id/confirm", async (req, res) => {
   const user = authUser(req, res);
   if (!user) return;
@@ -399,15 +414,19 @@ app.delete("/api/events/:id/confirm", async (req, res) => {
   }
 });
 
-// =====================================================================
+// =========================================================
 //  EXPORT
-// =====================================================================
+// =========================================================
 module.exports = app;
 
-// =====================================================================
+// =========================================================
 //  START SERVER (somente produção real)
-// =====================================================================
-if (!isUnitTest && !isIntegrationTest) {
+// =========================================================
+if (
+  process.env.NODE_ENV !== "test" &&
+  process.env.NODE_ENV !== "integration" &&
+  process.env.NODE_ENV !== "test_integration"
+) {
   app.listen(port, "0.0.0.0", () => {
     console.log(`GkEvents API rodando em http://0.0.0.0:${port}`);
   });

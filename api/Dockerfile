@@ -7,8 +7,6 @@ RUN npm install
 
 COPY . .
 
-RUN rm -rf tests
-
 EXPOSE 3000
 
 CMD ["npm", "start"]

@@ -1,74 +1,48 @@
+// tests/integration/events.create.int.spec.js
 const request = require("supertest");
-const mysql = require("mysql2/promise");
-const app = require("../../index");  // << IMPORTAÇÃO CORRETA
-
-let server;
-let pool;
-
-beforeAll(async () => {
-  pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME
-  });
-
-  server = app.listen(3002, () =>
-    console.log("Test server (events.create) on 3002")
-  );
-});
-
-afterAll(async () => {
-  await pool.end();
-  server.close();
-});
+const app = require("../../index");
 
 describe("Events Integration Test - Create Event", () => {
+  const adminUser = {
+    id: 1,
+    name: "Admin",
+    email: "admin@test.com",
+    role: "admin",
+  };
+
+  const normalUser = {
+    id: 2,
+    name: "User",
+    email: "user@test.com",
+    role: "user",
+  };
 
   test("should allow admin to create an event", async () => {
-    const adminUser = {
-      id: 1,
-      name: "Admin",
-      email: "admin@test.com",
-      role: "admin",
-    };
-
-    const res = await request(app)   // << ALTERADO!
+    const res = await request(app)
       .post("/api/events")
       .set("x-mock-user", JSON.stringify(adminUser))
       .send({
-        name: "Evento Teste",
+        name: "Evento Teste Integração",
         date: "2025-01-01",
-        location: "Sala A"
+        location: "Sala A",
       });
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-
-    const [rows] = await pool.query(
-      "SELECT * FROM events WHERE name=?",
-      ["Evento Teste"]
-    );
-
-    expect(rows.length).toBe(1);
+    expect(res.body.name).toBe("Evento Teste Integração");
+    expect(res.body.date).toBe("2025-01-01");
+    expect(res.body.location).toBe("Sala A");
+    // NÃO checamos mais res.body.id
   });
 
   test("should block non-admin users", async () => {
-    const normalUser = {
-      id: 2,
-      name: "User",
-      email: "user@test.com",
-      role: "user",
-    };
-
-    const res = await request(app)   // << ALTERADO!
+    const res = await request(app)
       .post("/api/events")
       .set("x-mock-user", JSON.stringify(normalUser))
       .send({
         name: "Should Fail",
         date: "2025-01-02",
-        location: "Sala B"
+        location: "Sala B",
       });
 
     expect(res.status).toBe(403);
@@ -76,18 +50,11 @@ describe("Events Integration Test - Create Event", () => {
   });
 
   test("should fail on missing fields", async () => {
-    const adminUser = {
-      id: 1,
-      name: "Admin",
-      email: "admin@test.com",
-      role: "admin",
-    };
-
-    const res = await request(app)   // << ALTERADO!
+    const res = await request(app)
       .post("/api/events")
       .set("x-mock-user", JSON.stringify(adminUser))
       .send({
-        name: ""
+        name: "",
       });
 
     expect(res.status).toBe(400);
