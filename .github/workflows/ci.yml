@@ -2,9 +2,9 @@ name: Node API CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   test:
@@ -15,13 +15,12 @@ jobs:
         image: mysql:8
         env:
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: gkevents
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping --silent"
+          --health-cmd="mysqladmin ping -h localhost --silent"
           --health-interval=5s
-          --health-timeout=5s
+          --health-timeout=3s
           --health-retries=10
 
     steps:
@@ -34,33 +33,33 @@ jobs:
           node-version: "18"
 
       - name: Install API dependencies
-        run: |
-          cd api
-          npm install
+        working-directory: api
+        run: npm install
 
       - name: Install MySQL client
         run: sudo apt-get update && sudo apt-get install -y mysql-client
 
-      - name: Create Database Schema
+      - name: Create Test Database + Schema
         run: |
-          mysql -h 127.0.0.1 -uroot -proot gkevents < api/schema.sql
-
-      - name: Run Integration Tests
-        env:
-          DB_HOST: 127.0.0.1
-          DB_USER: root
-          DB_PASS: root
-          DB_NAME: gkevents
-          DB_PORT: 3306
-          SESSION_SECRET: test
-          NODE_ENV: integration
-        run: |
-          cd api
-          npm run test:integration -- --forceExit
+          # Cria o banco gkevents_test (compatível com o seu schema.sql)
+          mysql -h 127.0.0.1 -uroot -proot -e "DROP DATABASE IF EXISTS gkevents_test;"
+          mysql -h 127.0.0.1 -uroot -proot -e "CREATE DATABASE gkevents_test;"
+          mysql -h 127.0.0.1 -uroot -proot gkevents_test < api/schema.sql
 
       - name: Run Unit Tests
         env:
           NODE_ENV: test
-        run: |
-          cd api
-          npm run test:unit
+        working-directory: api
+        run: npm run test:unit -- --forceExit
+
+      - name: Run Integration Tests
+        env:
+          NODE_ENV: test_integration
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASS: root
+          DB_NAME: gkevents_test
+          DB_PORT: 3306
+          SESSION_SECRET: test-secret
+        working-directory: api
+        run: npm run test:integration -- --forceExit

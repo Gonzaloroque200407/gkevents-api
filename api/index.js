@@ -1,4 +1,10 @@
+// Carrega variáveis de ambiente
 require("dotenv").config();
+
+const IS_TEST = ["test", "test_integration", "integration"].includes(
+  process.env.NODE_ENV
+);
+
 const path = require("path");
 const express = require("express");
 const mysql = require("mysql2/promise");
@@ -9,26 +15,20 @@ const EventEmitter = require("events");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// =========================================================
-//  DB POOL (PRODUÇÃO / TEST / INTEGRATION)
-// =========================================================
+/* ---------------------------------------
+   Conexão MySQL (produção e testes)
+---------------------------------------- */
 let pool;
 
-if (
-  process.env.NODE_ENV === "test" ||
-  process.env.NODE_ENV === "test_integration" ||
-  process.env.NODE_ENV === "integration"
-) {
-  // Pool real para testes (usa DB real)
+if (IS_TEST) {
   pool = mysql.createPool({
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 3306,
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
+    database: process.env.DB_NAME
   });
 } else {
-  // Pool produção
   pool = mysql.createPool({
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 3306,
@@ -37,27 +37,22 @@ if (
     database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0,
   });
 }
 
-// =========================================================
-//  SESSION STORE (FAKE EM TEST / INTEGRATION)
-// =========================================================
+/* ---------------------------------------
+   Session Store
+---------------------------------------- */
 let sessionStore;
 
-if (
-  process.env.NODE_ENV === "test" ||
-  process.env.NODE_ENV === "integration" ||
-  process.env.NODE_ENV === "test_integration"
-) {
-  // Fake session store para testes
+if (IS_TEST) {
+  // Session fake para testes
   sessionStore = new EventEmitter();
   sessionStore.get = (_, cb) => cb(null, null);
   sessionStore.set = (_, __, cb) => cb(null);
   sessionStore.destroy = (_, cb) => cb(null);
 } else {
-  // Session store real
+  // Session real
   sessionStore = new MySQLStore(
     {
       createDatabaseTable: true,
@@ -81,77 +76,56 @@ if (
   );
 }
 
-// =========================================================
-//  SESSIONS
-// =========================================================
+/* ---------------------------------------
+   Middlewares
+---------------------------------------- */
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "gkevents-session-secret-123",
     resave: false,
     saveUninitialized: false,
     store: sessionStore,
-    cookie: {
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 8,
-    },
+    cookie: { httpOnly: true, maxAge: 1000 * 60 * 60 * 8 },
   })
 );
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// =========================================================
-//  MOCK DE SESSÃO (TEST + INTEGRATION)
-// =========================================================
-if (
-  process.env.NODE_ENV === "test" ||
-  process.env.NODE_ENV === "integration" ||
-  process.env.NODE_ENV === "test_integration"
-) {
-  app.use((req, res, next) => {
-    // Forçar usuário não logado
+/* ---------------------------------------
+   Mock de sessão usado somente em testes
+---------------------------------------- */
+if (IS_TEST) {
+  app.use((req, _res, next) => {
     if (req.headers["x-test-nosession"] === "1") {
       req.session.user = null;
       return next();
     }
 
-    // Forçar usuário customizado
-    const mocked = req.headers["x-mock-user"];
-    if (mocked) {
+    if (req.headers["x-mock-user"]) {
       try {
-        req.session.user = JSON.parse(mocked);
+        req.session.user = JSON.parse(req.headers["x-mock-user"]);
       } catch {
         req.session.user = null;
       }
       return next();
     }
 
-    // Por padrão, não logado
-    if (!req.session.user) req.session.user = null;
-
+    req.session.user = null;
     next();
   });
 }
 
-// =========================================================
-//  STATIC FILES
-// =========================================================
-if (
-  process.env.NODE_ENV !== "test" &&
-  process.env.NODE_ENV !== "integration" &&
-  process.env.NODE_ENV !== "test_integration"
-) {
+/* ---------------------------------------
+   Arquivos estáticos (produção)
+---------------------------------------- */
+if (!IS_TEST) {
   app.use(express.static(path.join(__dirname, "public")));
 }
 
-// =========================================================
-//  ROOT ROUTE
-// =========================================================
-app.get("/", (_, res) => res.redirect("/login.html"));
-
-// =========================================================
-//  HELPERS
-// =========================================================
+/* ---------------------------------------
+   Helpers de autenticação
+---------------------------------------- */
 function authUser(req, res) {
   if (!req.session || !req.session.user) {
     res.status(401).json({ ok: false, error: "not_authenticated" });
@@ -172,9 +146,9 @@ function authAdmin(req, res) {
   return u;
 }
 
-// =========================================================
-//  HEALTHCHECK
-// =========================================================
+/* ---------------------------------------
+   Healthcheck
+---------------------------------------- */
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -184,9 +158,9 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-// =========================================================
-//  SESSION ROUTES
-// =========================================================
+/* ---------------------------------------
+   Sessão
+---------------------------------------- */
 app.get("/api/me", (req, res) => {
   res.json({ ok: true, user: req.session.user || null });
 });
@@ -195,9 +169,9 @@ app.post("/api/logout", (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-// =========================================================
-//  LOGIN
-// =========================================================
+/* ---------------------------------------
+   Login
+---------------------------------------- */
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -205,8 +179,12 @@ app.post("/api/login", async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ ok: false, error: "missing_fields" });
 
-    const sql =
-      "SELECT id,name,email,role FROM users WHERE email=? AND password_hash=LOWER(SHA2(?,256)) LIMIT 1";
+    const sql = `
+      SELECT id,name,email,role
+      FROM users
+      WHERE email=? AND password_hash=LOWER(SHA2(?,256))
+      LIMIT 1
+    `;
 
     const [rows] = await pool.query(sql, [email.trim(), password]);
 
@@ -214,17 +192,15 @@ app.post("/api/login", async (req, res) => {
       return res.status(401).json({ ok: false, error: "invalid_credentials" });
 
     req.session.user = rows[0];
-
-    res.json({ ok: true, user: req.session.user });
-  } catch (e) {
-    console.error("login error:", e);
+    res.json({ ok: true, user: rows[0] });
+  } catch {
     res.status(500).json({ ok: false, error: "login_failed" });
   }
 });
 
-// =========================================================
-//  REGISTER
-// =========================================================
+/* ---------------------------------------
+   Registro
+---------------------------------------- */
 app.post("/api/register", async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
@@ -232,10 +208,16 @@ app.post("/api/register", async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ ok: false, error: "missing_fields" });
 
-    const sql =
-      "INSERT INTO users (name,email,password_hash,role) VALUES (?,?,LOWER(SHA2(?,256)),'user')";
+    const sql = `
+      INSERT INTO users (name,email,password_hash,role)
+      VALUES (?,?,LOWER(SHA2(?,256)),'user')
+    `;
 
-    const [r] = await pool.query(sql, [name || null, email.trim(), password]);
+    const [r] = await pool.query(sql, [
+      name || null,
+      email.trim(),
+      password,
+    ]);
 
     res.json({
       ok: true,
@@ -245,14 +227,13 @@ app.post("/api/register", async (req, res) => {
     if (e.code === "ER_DUP_ENTRY")
       return res.status(409).json({ ok: false, error: "email_in_use" });
 
-    console.error("register error:", e);
     res.status(500).json({ ok: false, error: "register_failed" });
   }
 });
 
-// =========================================================
-//  LIST EVENTS
-// =========================================================
+/* ---------------------------------------
+   Lista de eventos
+---------------------------------------- */
 app.get("/api/events", async (req, res) => {
   try {
     const q = (req.query.q || "").trim();
@@ -272,15 +253,14 @@ app.get("/api/events", async (req, res) => {
 
     const [rows] = await pool.query(sql, params);
     res.json(rows);
-  } catch (e) {
-    console.error("events list error:", e);
+  } catch {
     res.status(500).json({ ok: false, error: "list_failed" });
   }
 });
 
-// =========================================================
-//  EVENT DETAILS
-// =========================================================
+/* ---------------------------------------
+   Detalhes do evento
+---------------------------------------- */
 app.get("/api/events/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -294,24 +274,25 @@ app.get("/api/events/:id", async (req, res) => {
       return res.status(404).json({ ok: false, error: "not_found" });
 
     const [attendees] = await pool.query(
-      `SELECT ea.user_id, u.name, u.email
-       FROM event_attendees ea
-       JOIN users u ON u.id = ea.user_id
-       WHERE ea.event_id=?
-       ORDER BY u.name`,
+      `
+      SELECT ea.user_id, u.name, u.email
+      FROM event_attendees ea
+      JOIN users u ON u.id = ea.user_id
+      WHERE ea.event_id=?
+      ORDER BY u.name
+      `,
       [id]
     );
 
     res.json({ event, attendees });
-  } catch (e) {
-    console.error("event details error:", e);
+  } catch {
     res.status(500).json({ ok: false, error: "detail_failed" });
   }
 });
 
-// =========================================================
-//  CRUD EVENTS (ADMIN ONLY)
-// =========================================================
+/* ---------------------------------------
+   Criar evento (Admin)
+---------------------------------------- */
 app.post("/api/events", async (req, res) => {
   if (!authAdmin(req, res)) return;
 
@@ -321,18 +302,24 @@ app.post("/api/events", async (req, res) => {
     if (!name || !date || !location)
       return res.status(400).json({ ok: false, error: "missing_fields" });
 
-    const [r] = await pool.query(
-      "INSERT INTO events (name,date,location) VALUES (?,?,?)",
-      [name, date, location]
-    );
+    const sql = "INSERT INTO events (name, date, location) VALUES (?, ?, ?)";
+    const [result] = await pool.execute(sql, [name, date, location]);
 
-    res.json({ ok: true, id: r.insertId, name, date, location });
-  } catch (e) {
-    console.error("create event error:", e);
+    res.json({
+      ok: true,
+      id: result.insertId,
+      name,
+      date,
+      location,
+    });
+  } catch {
     res.status(500).json({ ok: false, error: "create_failed" });
   }
 });
 
+/* ---------------------------------------
+   Atualizar evento
+---------------------------------------- */
 app.put("/api/events/:id", async (req, res) => {
   if (!authAdmin(req, res)) return;
 
@@ -349,12 +336,14 @@ app.put("/api/events/:id", async (req, res) => {
     );
 
     res.json({ ok: true, id, name, date, location });
-  } catch (e) {
-    console.error("update event error:", e);
+  } catch {
     res.status(500).json({ ok: false, error: "update_failed" });
   }
 });
 
+/* ---------------------------------------
+   Deletar evento
+---------------------------------------- */
 app.delete("/api/events/:id", async (req, res) => {
   if (!authAdmin(req, res)) return;
 
@@ -365,68 +354,62 @@ app.delete("/api/events/:id", async (req, res) => {
     await pool.query("DELETE FROM events WHERE id=?", [id]);
 
     res.json({ ok: true });
-  } catch (e) {
-    console.error("delete event error:", e);
+  } catch {
     res.status(500).json({ ok: false, error: "delete_failed" });
   }
 });
 
-// =========================================================
-//  CONFIRM & UNCONFIRM
-// =========================================================
+/* ---------------------------------------
+   Confirmar presença
+---------------------------------------- */
 app.post("/api/events/:id/confirm", async (req, res) => {
   const user = authUser(req, res);
   if (!user) return;
 
-  const eventId = Number(req.params.id);
-
   try {
     await pool.query(
-      `INSERT INTO event_attendees (event_id, user_id)
-       VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE event_id = VALUES(event_id)`,
-      [eventId, user.id]
+      `
+      INSERT INTO event_attendees (event_id, user_id)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE event_id = VALUES(event_id)
+      `,
+      [Number(req.params.id), user.id]
     );
 
     res.json({ ok: true, joined: true });
-  } catch (e) {
-    console.error("confirm error:", e);
+  } catch {
     res.status(500).json({ ok: false, error: "confirm_failed" });
   }
 });
 
+/* ---------------------------------------
+   Cancelar presença
+---------------------------------------- */
 app.delete("/api/events/:id/confirm", async (req, res) => {
   const user = authUser(req, res);
   if (!user) return;
 
-  const eventId = Number(req.params.id);
-
   try {
     await pool.query(
       "DELETE FROM event_attendees WHERE event_id=? AND user_id=?",
-      [eventId, user.id]
+      [Number(req.params.id), user.id]
     );
 
     res.json({ ok: true, left: true });
-  } catch (e) {
-    console.error("unconfirm error:", e);
+  } catch {
     res.status(500).json({ ok: false, error: "unconfirm_failed" });
   }
 });
 
-// =========================================================
-//  EXPORT
-// =========================================================
+/* ---------------------------------------
+   Exporta app para testes
+---------------------------------------- */
 module.exports = app;
 
-// =========================================================
-//  START SERVER (somente produção real)
-// =========================================================
-if (
-  process.env.NODE_ENV !== "test" &&
-  process.env.NODE_ENV !== "integration" &&
-  process.env.NODE_ENV !== "test_integration"
-) {
+/* ---------------------------------------
+   Inicia servidor em produção
+---------------------------------------- */
+if (!IS_TEST) {
   app.listen(port, "0.0.0.0", () => {
     console.log(`GkEvents API rodando em http://0.0.0.0:${port}`);
   });

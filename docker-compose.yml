@@ -6,19 +6,24 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: gkevents
-      MYSQL_PASSWORD: root
     ports:
       - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
     volumes:
       - ./mysql_data:/var/lib/mysql
+      - ./api/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
 
   api:
     build: ./api
     container_name: gkevents-api
     restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -30,12 +35,15 @@ services:
       SESSION_SECRET: gkevents-session-secret-123
     ports:
       - "3000:3000"
+   # volumes:
+     # - ./api:/app
 
   tests:
     build: ./api
     container_name: gkevents-tests
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       NODE_ENV: test_integration
       DB_HOST: db
@@ -52,7 +60,8 @@ services:
     image: nginx:latest
     container_name: gkevents-nginx
     depends_on:
-      - api
+      api:
+        condition: service_started
     ports:
       - "80:80"
     volumes:
